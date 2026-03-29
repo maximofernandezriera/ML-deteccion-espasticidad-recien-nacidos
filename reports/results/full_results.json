@@ -1,0 +1,192 @@
+{
+  "timestamp": "20260329_141705",
+  "experiment": "Synthetic pathological",
+  "date": "07/02/2026",
+  "dataset": {
+    "total": 1534,
+    "n_features_raw": 30,
+    "n_features_pca": 14,
+    "pca_variance": 0.9548371041714038,
+    "synthetic_method": "3-level clinical perturbation"
+  },
+  "splits": {
+    "train": 920,
+    "val": 307,
+    "test": 307
+  },
+  "best_model": {
+    "Model": "SVM",
+    "Accuracy": 0.993485342019544,
+    "Sensitivity": 0.9869281045751634,
+    "Specificity": 1.0,
+    "F1-score": 0.993421052631579,
+    "AUC-ROC": 0.9996604702487055,
+    "MCC": 0.9870537878745682
+  },
+  "all_models": [
+    {
+      "Model": "SVM",
+      "Accuracy": 0.993485342019544,
+      "Sensitivity": 0.9869281045751634,
+      "Specificity": 1.0,
+      "Precision": 1.0,
+      "F1-score": 0.993421052631579,
+      "F1-macro": 0.9934847198641765,
+      "Cohen-Kappa": 0.9869699927846866,
+      "MCC": 0.9870537878745682,
+      "AUC-ROC": 0.9996604702487055,
+      "Log-Loss": 0.021870813123325956,
+      "Brier-Score": 0.00470602500084644,
+      "PPV": 1.0,
+      "NPV": 0.9871794871794872,
+      "Avg-Confidence": 0.9886082200419057,
+      "Confidence-Gap": 0.15859572960136414,
+      "Train-Time-s": 0.030997753143310547,
+      "Rank": 1
+    },
+    {
+      "Model": "Logistic Regression",
+      "Accuracy": 0.990228013029316,
+      "Sensitivity": 0.9934640522875817,
+      "Specificity": 0.987012987012987,
+      "Precision": 0.987012987012987,
+      "F1-score": 0.990228013029316,
+      "F1-macro": 0.990228013029316,
+      "Cohen-Kappa": 0.9804562334217507,
+      "MCC": 0.9804770393005687,
+      "AUC-ROC": 0.9994058229352347,
+      "Log-Loss": 0.0475552734213299,
+      "Brier-Score": 0.011051656120601723,
+      "PPV": 0.987012987012987,
+      "NPV": 0.9934640522875817,
+      "Avg-Confidence": 0.9675703735925024,
+      "Confidence-Gap": 0.2644307127780736,
+      "Train-Time-s": 0.11797094345092773,
+      "Rank": 2
+    },
+    {
+      "Model": "XGBoost",
+      "Accuracy": 0.990228013029316,
+      "Sensitivity": 0.9869281045751634,
+      "Specificity": 0.9935064935064936,
+      "Precision": 0.993421052631579,
+      "F1-score": 0.9901639344262295,
+      "F1-macro": 0.990227598281076,
+      "Cohen-Kappa": 0.9804554039428729,
+      "MCC": 0.9804762115702723,
+      "AUC-ROC": 0.9985145573380868,
+      "Log-Loss": 0.04102514634174158,
+      "Brier-Score": 0.010883940383791924,
+      "PPV": 0.993421052631579,
+      "NPV": 0.9870967741935484,
+      "Avg-Confidence": 0.984948992729187,
+      "Confidence-Gap": 0.13500618934631348,
+      "Train-Time-s": 2.1550841331481934,
+      "Rank": 3
+    },
+    {
+      "Model": "Random Forest",
+      "Accuracy": 0.990228013029316,
+      "Sensitivity": 0.9934640522875817,
+      "Specificity": 0.987012987012987,
+      "Precision": 0.987012987012987,
+      "F1-score": 0.990228013029316,
+      "F1-macro": 0.990228013029316,
+      "Cohen-Kappa": 0.9804562334217507,
+      "MCC": 0.9804770393005687,
+      "AUC-ROC": 0.9980901451489687,
+      "Log-Loss": 0.07493387878369698,
+      "Brier-Score": 0.015238919563175878,
+      "PPV": 0.987012987012987,
+      "NPV": 0.9934640522875817,
+      "Avg-Confidence": 0.9422362262692068,
+      "Confidence-Gap": 0.2551935384151669,
+      "Train-Time-s": 0.3217916488647461,
+      "Rank": 4
+    }
+  ],
+  "cross_validation": [
+    {
+      "Model": "Logistic Regression",
+      "CV-Acc-Mean": 0.9837069681292713,
+      "CV-Acc-Std": 0.00920860918826879,
+      "CV-F1-Mean": 0.9834849622972209,
+      "CV-F1-Std": 0.009371973304121284,
+      "CV-AUC-Mean": 0.9988703423536179,
+      "CV-AUC-Std": 0.0008566178728404826,
+      "CV-Sens-Mean": 0.9726508785332315,
+      "Train-Acc-Mean": 0.9885920480821048,
+      "Overfit-Gap": 0.004885079952833493
+    },
+    {
+      "Model": "Random Forest",
+      "CV-Acc-Mean": 0.9882650997423943,
+      "CV-Acc-Std": 0.004420999309018649,
+      "CV-F1-Mean": 0.9882264280981067,
+      "CV-F1-Std": 0.004416818891158005,
+      "CV-AUC-Mean": 0.9990657383967649,
+      "CV-AUC-Std": 0.0007872668310686913,
+      "CV-Sens-Mean": 0.9843561667091081,
+      "Train-Acc-Mean": 0.9986962719909528,
+      "Overfit-Gap": 0.010431172248558496
+    },
+    {
+      "Model": "SVM",
+      "CV-Acc-Mean": 0.9934789550999554,
+      "CV-Acc-Std": 0.0029206036170798845,
+      "CV-F1-Mean": 0.9934639964456619,
+      "CV-F1-Std": 0.0029230739335996594,
+      "CV-AUC-Mean": 0.999778196087308,
+      "CV-AUC-Std": 0.0003191189941080155,
+      "CV-Sens-Mean": 0.9908921144215264,
+      "Train-Acc-Mean": 0.9970664128764046,
+      "Overfit-Gap": 0.003587457776449199
+    },
+    {
+      "Model": "XGBoost",
+      "CV-Acc-Mean": 0.9895701603116815,
+      "CV-Acc-Std": 0.00631554937735537,
+      "CV-F1-Mean": 0.9894821562803898,
+      "CV-F1-Std": 0.00641964975534662,
+      "CV-AUC-Mean": 0.9995668776522295,
+      "CV-AUC-Std": 0.0002955544832420841,
+      "CV-Sens-Mean": 0.9830404889228419,
+      "Train-Acc-Mean": 1.0,
+      "Overfit-Gap": 0.010429839688318454
+    }
+  ],
+  "total_time_s": 18.892261266708374,
+  "train_times": {
+    "Logistic Regression": 0.11797094345092773,
+    "Random Forest": 0.3217916488647461,
+    "SVM": 0.030997753143310547,
+    "XGBoost": 2.1550841331481934
+  },
+  "best_per_class": {
+    "Normal": {
+      "precision": 0.9871794871794872,
+      "recall": 1.0,
+      "f1-score": 0.9935483870967742,
+      "support": 154.0
+    },
+    "Patol\u00f3gico": {
+      "precision": 1.0,
+      "recall": 0.9869281045751634,
+      "f1-score": 0.993421052631579,
+      "support": 153.0
+    },
+    "accuracy": 0.993485342019544,
+    "macro avg": {
+      "precision": 0.9935897435897436,
+      "recall": 0.9934640522875817,
+      "f1-score": 0.9934847198641765,
+      "support": 307.0
+    },
+    "weighted avg": {
+      "precision": 0.9935688632757036,
+      "recall": 0.993485342019544,
+      "f1-score": 0.9934849272492989,
+      "support": 307.0
+    }
+  }
+}
