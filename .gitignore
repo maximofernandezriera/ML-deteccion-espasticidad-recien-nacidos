@@ -38,6 +38,29 @@ Thumbs.db
 # Jupyter
 .ipynb_checkpoints/
 
-# Large files (optional - uncomment if needed)
-# *.pkl
-# *.npz
+# Large files
+*.pkl
+*.npz
+data/raw/
+data/features_*.npz
+models/
+reports/figures_video/
+reports/figures_synthetic/
+reports/results_video/
+reports/ablation_*/
+
+# LaTeX build artifacts (presentaciones internas)
+*.aux
+*.log
+*.nav
+*.out
+*.snm
+*.toc
+*.bcf
+*.run.xml
+*.synctex.gz
+*.bbl
+*.blg
+*.fls
+*.fdb_latexmk
+presentacion_ablacion.pdf

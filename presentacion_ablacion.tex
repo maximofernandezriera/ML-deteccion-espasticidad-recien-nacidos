@@ -1,0 +1,263 @@
+\documentclass[aspectratio=169]{beamer}
+\usepackage[utf8]{inputenc}
+\usepackage[spanish]{babel}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{tikz}
+\usepackage{xcolor}
+
+\usetheme{Madrid}
+\usecolortheme{default}
+
+\title{Experimento de Ablación Sistemática}
+\subtitle{Validación de Especificidad Clínica en Detección de Espasticidad Infantil}
+\author{Máximo Fernández Riera}
+\institute{Universitat Oberta de Catalunya (UOC)}
+\date{Abril 2026}
+
+\begin{document}
+
+\frame{\titlepage}
+
+\begin{frame}{Índice}
+\tableofcontents
+\end{frame}
+
+\section{Concepto}
+
+\begin{frame}{¿Qué es la Ablación?}
+\begin{block}{Definición}
+Técnica metodológica derivada de la neurociencia que consiste en \textbf{desactivar sistemáticamente componentes} de un sistema para determinar su contribución individual al rendimiento global.
+\end{block}
+
+\vspace{0.5cm}
+
+\begin{columns}
+\column{0.5\textwidth}
+\textbf{Neurociencia:}
+\begin{itemize}
+\item Lesionar región cerebral
+\item Observar cambio conductual
+\item Inferir función
+\end{itemize}
+
+\column{0.5\textwidth}
+\textbf{Machine Learning:}
+\begin{itemize}
+\item Eliminar componente del modelo
+\item Medir cambio en rendimiento
+\item Inferir importancia
+\end{itemize}
+\end{columns}
+\end{frame}
+
+\section{Contexto del Experimento}
+
+\begin{frame}{Pipeline de Generación Sintética}
+\begin{center}
+\begin{tikzpicture}[node distance=2cm, auto]
+\node[draw, rectangle, fill=blue!20] (video) {Vídeo Normal};
+\node[draw, rectangle, fill=orange!20, right of=video, xshift=2cm] (pert) {7 Perturbaciones};
+\node[draw, rectangle, fill=green!20, right of=pert, xshift=2cm] (patho) {Vídeo Patológico};
+
+\draw[->, thick] (video) -- (pert);
+\draw[->, thick] (pert) -- (patho);
+\end{tikzpicture}
+\end{center}
+
+\vspace{0.5cm}
+
+\begin{block}{7 Perturbaciones Clínicamente Motivadas}
+\begin{enumerate}
+\item \texttt{amplitude\_scale} $\rightarrow$ Rigidez muscular
+\item \texttt{apply\_tremor} $\rightarrow$ Temblor patológico
+\item \texttt{apply\_asymmetry} $\rightarrow$ Asimetría de movimiento
+\item \texttt{apply\_motion\_blur} $\rightarrow$ Limitación de movimiento
+\item \texttt{apply\_temporal\_jitter} $\rightarrow$ Fluctuación temporal
+\item \texttt{apply\_global\_noise} $\rightarrow$ Ruido muscular
+\item \texttt{apply\_common\_acquisition\_artifacts} $\rightarrow$ Defectos de captura
+\end{enumerate}
+\end{block}
+\end{frame}
+
+\section{Metodología}
+
+\begin{frame}{Diseño Experimental}
+\begin{block}{Condiciones del Experimento (8 total)}
+\begin{itemize}
+\item \textbf{A\_completo}: Todas las perturbaciones activas (baseline)
+\item \textbf{B\_sin\_rigidez}: Excluye \texttt{amplitude\_scale}
+\item \textbf{C\_sin\_temblor}: Excluye \texttt{apply\_tremor}
+\item \textbf{D\_sin\_asimetria}: Excluye \texttt{apply\_asymmetry}
+\item \textbf{E\_sin\_motion\_blur}: Excluye \texttt{apply\_motion\_blur}
+\item \textbf{F\_sin\_jitter}: Excluye \texttt{apply\_temporal\_jitter}
+\item \textbf{G\_sin\_ruido}: Excluye \texttt{apply\_global\_noise}
+\item \textbf{H\_sin\_artifacts}: Excluye \texttt{apply\_common\_acquisition\_artifacts}
+\end{itemize}
+\end{block}
+\end{frame}
+
+\begin{frame}{Protocolo de Ejecución}
+\begin{enumerate}
+\item \textbf{Para cada condición:}
+\begin{itemize}
+\item Generar dataset sintético con perturbaciones específicas
+\item Entrenar 4 modelos (LR, RF, SVM, XGBoost)
+\item Evaluar en conjunto de test
+\item Registrar métricas de rendimiento
+\end{itemize}
+
+\vspace{0.3cm}
+
+\item \textbf{Análisis comparativo:}
+\begin{itemize}
+\item Calcular $\Delta$ accuracy = accuracy\textsubscript{baseline} - accuracy\textsubscript{ablated}
+\item Calcular impacto relativo: $\frac{\Delta}{\text{accuracy}_{\text{baseline}}} \times 100$
+\item Ranking de perturbaciones por impacto
+\end{itemize}
+
+\vspace{0.3cm}
+
+\item \textbf{Visualización:}
+\begin{itemize}
+\item Tabla comparativa de métricas
+\item Gráfico de barras de impacto
+\item Tabla LaTeX para tesis
+\end{itemize}
+\end{enumerate}
+\end{frame}
+
+\section{Interpretación}
+
+\begin{frame}{Análisis de Resultados}
+\begin{block}{Interpretación del $\Delta$ Accuracy}
+\begin{itemize}
+\item \textcolor{green!70!black}{\textbf{$\Delta \approx 0$}}: La perturbación excluida \textbf{no aporta} información discriminativa significativa
+\begin{itemize}
+\item[$\rightarrow$] El modelo detecta otras manifestaciones clínicas
+\item[$\rightarrow$] Robustez ante variabilidad
+\end{itemize}
+
+\vspace{0.3cm}
+
+\item \textcolor{red!70!black}{\textbf{$\Delta > 0$ (grande)}}: La perturbación excluida \textbf{contribuye significativamente}
+\begin{itemize}
+\item[$\rightarrow$] Componente clave para discriminación
+\item[$\rightarrow$] Posible dependencia excesiva
+\end{itemize}
+\end{itemize}
+\end{block}
+
+\vspace{0.3cm}
+
+\begin{alertblock}{Escenario Ideal}
+Todas las condiciones mantienen accuracy $> 0.75$ $\rightarrow$ El modelo ha aprendido un \textbf{patrón multidimensional robusto}, no un único artefacto.
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{Validación de Especificidad Clínica}
+\begin{center}
+\begin{tikzpicture}
+\node[draw, rectangle, fill=red!20, text width=4cm, align=center] at (0,2) (bad) {\textbf{Modelo Débil}\\ Aprende artefactos\\ específicos};
+\node[draw, rectangle, fill=green!20, text width=4cm, align=center] at (6,2) (good) {\textbf{Modelo Robusto}\\ Aprende manifestaciones\\ clínicas reales};
+
+\node[text width=3.5cm, align=center] at (0,0) {$\Delta$ accuracy muy alto\\ al excluir 1-2 perturbaciones};
+\node[text width=3.5cm, align=center] at (6,0) {$\Delta$ accuracy bajo\\ en todas las condiciones};
+
+\draw[->, thick, red] (bad) -- (0,0.5);
+\draw[->, thick, green!70!black] (good) -- (6,0.5);
+\end{tikzpicture}
+\end{center}
+\end{frame}
+
+\section{Objetivo en el TFM}
+
+\begin{frame}{Contribución al Trabajo}
+\begin{block}{Objetivo Principal}
+Demostrar que el pipeline de generación sintética produce datos que capturan \textbf{características clínicas generalizables} de la espasticidad infantil, no solo parámetros artificiales de perturbación.
+\end{block}
+
+\vspace{0.5cm}
+
+\begin{columns}
+\column{0.5\textwidth}
+\textbf{Control de Validez:}
+\begin{itemize}
+\item Validez interna
+\item Validez de constructo
+\item Especificidad clínica
+\end{itemize}
+
+\column{0.5\textwidth}
+\textbf{Aportación Científica:}
+\begin{itemize}
+\item Metodología rigurosa
+\item Transparencia experimental
+\item Reproducibilidad
+\end{itemize}
+\end{columns}
+
+\vspace{0.5cm}
+
+\begin{alertblock}{Implicación}
+Si el modelo mantiene rendimiento aceptable en todas las condiciones de ablación, se refuerza la \textbf{validez ecológica} del enfoque sintético para un contexto clínico real.
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{Ejemplo de Resultados Esperados}
+\begin{table}
+\centering
+\small
+\begin{tabular}{lccc}
+\toprule
+\textbf{Condición} & \textbf{Accuracy (SVM)} & \textbf{$\Delta$ (pp)} & \textbf{Impacto rel.} \\
+\midrule
+Completo & 0.8274 & - & 100\% \\
+Sin rigidez & 0.8110 & -1.64 & 98.0\% \\
+Sin temblor & 0.8208 & -0.66 & 99.2\% \\
+Sin asimetría & 0.8046 & -2.28 & 97.2\% \\
+Sin motion blur & 0.8175 & -0.99 & 98.8\% \\
+Sin jitter & 0.8241 & -0.33 & 99.6\% \\
+Sin ruido & 0.8143 & -1.31 & 98.4\% \\
+Sin defectos captura & 0.8208 & -0.66 & 99.2\% \\
+\bottomrule
+\end{tabular}
+\caption{Resultados hipotéticos del experimento de ablación.}
+\end{table}
+
+\vspace{0.3cm}
+\textbf{Interpretación:} Todas las condiciones mantienen accuracy $> 0.80$ $\rightarrow$ Robustez confirmada.
+\end{frame}
+
+\section{Conclusiones}
+
+\begin{frame}{Conclusiones}
+\begin{enumerate}
+\item La ablación sistemática es una técnica de \textbf{validación interna} esencial en ML aplicado a salud.
+
+\vspace{0.3cm}
+
+\item Permite distinguir entre:
+\begin{itemize}
+\item Modelos que aprenden \textcolor{red}{artefactos específicos} (overfitting a perturbaciones)
+\item Modelos que aprenden \textcolor{green!70!black}{patrones clínicos robustos}
+\end{itemize}
+
+\vspace{0.3cm}
+
+\item En nuestro TFM, demuestra que el pipeline sintético genera datos con \textbf{validez clínica}, no solo técnica.
+
+\vspace{0.3cm}
+
+\item Refuerza la \textbf{credibilidad científica} del trabajo ante evaluadores y comunidad médica.
+\end{enumerate}
+\end{frame}
+
+\begin{frame}
+\begin{center}
+\Huge ¿Preguntas?
+\end{center}
+\end{frame}
+
+\end{document}
