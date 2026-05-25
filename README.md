@@ -172,7 +172,7 @@ Total: **1534 muestras balanceadas** (767 normal + 767 sintético).
 ## Autor y licencia
 
 **Máximo Fernández Riera**
-TFM — Máster Universitario en Ciencia de Datos
+TFM — Máster Universitario en Ingeniería Informática
 Universitat Oberta de Catalunya (UOC)
 
 **Licencia**: MIT — ver `LICENSE` (libre uso académico y comercial con atribución).
