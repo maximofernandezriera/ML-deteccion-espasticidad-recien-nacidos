@@ -153,7 +153,7 @@ El pipeline produce 16 figuras PNG numeradas en `reports/figures_video/`:
 
 ## Dataset
 
-El corpus original contiene **767 vídeos de movimiento espontáneo normal** procedentes del [Infant Movements Dataset (Kaggle)](https://www.kaggle.com/datasets/) (resolución 50×50, 100 frames por muestra).
+El corpus original contiene **767 vídeos de movimiento espontáneo normal** procedentes del [Infant Movements Dataset (Kaggle)](https://www.kaggle.com/datasets/hansamaldharmananda/infants-movements-kicking-patterns-data-set) (resolución 50×50, 100 frames por muestra).
 
 Se generan **767 muestras sintéticas patológicas** mediante 7 perturbaciones clínicamente motivadas aplicadas sobre el vídeo crudo:
 
