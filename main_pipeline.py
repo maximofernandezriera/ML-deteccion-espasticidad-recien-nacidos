@@ -5,11 +5,12 @@ PIPELINE CON DATASET SINTÉTICO - DETECCIÓN DE ESPASTICIDAD EN NEONATOS
 ================================================================================
 TFM - Universitat Oberta de Catalunya (UOC)
 Autor: Máximo Fernández Riera
-Fecha: 07/02/2026
+Fecha: 03/04/2026
 
-Aborda la limitación principal: ausencia de datos patológicos en el corpus Kaggle.
+Versión centrada exclusivamente en perturbación sobre vídeo crudo.
 Genera dataset sintético con movimiento espástico mediante perturbaciones
-clínicamente motivadas sobre características reales de movimiento normal.
+clínicamente motivadas aplicadas sobre vídeos normales antes de la extracción
+de características.
 
 Clasificación binaria: Normal (0) vs Patológico sintético (1)
 ================================================================================
@@ -25,6 +26,7 @@ import matplotlib.gridspec as gridspec
 from matplotlib.ticker import MaxNLocator
 import seaborn as sns
 import joblib
+import cv2
 from pathlib import Path
 from datetime import datetime
 from scipy import stats
@@ -53,10 +55,18 @@ np.random.seed(42)
 
 PROJECT_ROOT = Path(__file__).parent
 DATA_DIR = PROJECT_ROOT / 'data'
-MODELS_DIR = PROJECT_ROOT / 'models' / 'synthetic'
-FIGURES_DIR = PROJECT_ROOT / 'reports' / 'figures'
-RESULTS_DIR = PROJECT_ROOT / 'reports' / 'results'
-for d in [MODELS_DIR, FIGURES_DIR, RESULTS_DIR]:
+MODELS_BASE_DIR = PROJECT_ROOT / 'models'
+REPORTS_DIR = PROJECT_ROOT / 'reports'
+MODELS_DIR = MODELS_BASE_DIR / 'synthetic_video'
+FIGURES_DIR = REPORTS_DIR / 'figures_video'
+RESULTS_DIR = REPORTS_DIR / 'results_video'
+RAW_VIDEO_CANDIDATES = [
+    PROJECT_ROOT / 'data' / 'raw',
+    PROJECT_ROOT.parent / 'data' / 'raw',
+    PROJECT_ROOT.parent / 'FUENTE' / 'kaggle_data'
+]
+CURRENT_MODE = 'raw_video'
+for d in [MODELS_BASE_DIR, REPORTS_DIR, MODELS_DIR, FIGURES_DIR, RESULTS_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 RANDOM_STATE = 42
@@ -76,78 +86,299 @@ def pr(t): print("\n" + "="*78 + f"\n  {t}\n" + "="*78)
 def ps(t): print(f"\n--- {t} ---")
 
 
+def configure_output_dirs():
+    global MODELS_DIR, FIGURES_DIR, RESULTS_DIR, CURRENT_MODE
+    CURRENT_MODE = 'raw_video'
+    MODELS_DIR = MODELS_BASE_DIR / 'synthetic_video'
+    FIGURES_DIR = REPORTS_DIR / 'figures_video'
+    RESULTS_DIR = REPORTS_DIR / 'results_video'
+    for d in [MODELS_DIR, FIGURES_DIR, RESULTS_DIR]:
+        d.mkdir(parents=True, exist_ok=True)
+
+
+def find_raw_video_dir():
+    for candidate in RAW_VIDEO_CANDIDATES:
+        if (candidate / 'data_100_50_50.npz').exists() and (candidate / 'target_100_50_50.npz').exists():
+            return candidate
+    return None
+
+
 # ============================================================================
 # FASE 1: GENERACIÓN DEL DATASET SINTÉTICO
 # ============================================================================
 
-def generate_synthetic_pathological(X_normal, n_synthetic=None, severity_levels=3):
-    """Genera muestras sintéticas de movimiento espástico basadas en literatura clínica."""
-    if n_synthetic is None:
-        n_synthetic = len(X_normal)
+def load_raw_video_corpus():
+    raw_dir = find_raw_video_dir()
+    if raw_dir is None:
+        raise FileNotFoundError('No se encontró el corpus de vídeo crudo en ninguna ruta candidata.')
+    print(f"  Directorio de vídeo crudo: {raw_dir}")
+    videos = np.load(raw_dir / 'data_100_50_50.npz')['arr_0'].astype(np.uint8)
+    labels = np.load(raw_dir / 'target_100_50_50.npz')['arr_0']
+    print(f"  Vídeos cargados: {videos.shape} | Labels originales: {labels.shape}")
+    return videos, labels
+
+
+def ensure_uint8_video(video):
+    if video.dtype == np.uint8:
+        return video
+    if np.max(video) <= 1.0:
+        video = video * 255.0
+    return np.clip(video, 0, 255).astype(np.uint8)
+
+
+def extract_optical_flow(video):
+    frames_gray = []
+    for frame in video:
+        f = ensure_uint8_video(frame)
+        if len(f.shape) == 3 and f.shape[2] == 3:
+            gray = cv2.cvtColor(f, cv2.COLOR_RGB2GRAY)
+        else:
+            gray = f if len(f.shape) == 2 else f[:, :, 0]
+        frames_gray.append(gray)
+    if len(frames_gray) < 2:
+        return np.zeros(6)
+    flows = []
+    for i in range(len(frames_gray) - 1):
+        flow = cv2.calcOpticalFlowFarneback(
+            frames_gray[i], frames_gray[i+1], None, 0.5, 3, 15, 3, 5, 1.2, 0)
+        flows.append(flow)
+    flows = np.array(flows)
+    mag = np.sqrt(flows[:,:,:,0]**2 + flows[:,:,:,1]**2)
+    ang = np.arctan2(flows[:,:,:,1], flows[:,:,:,0])
+    return np.array([
+        np.mean(mag), np.std(mag), np.max(mag),
+        np.mean(np.abs(ang)), np.std(ang),
+        np.sum(mag > 1.0) / mag.size
+    ])
+
+
+def extract_temporal(video):
+    intensity = np.mean(video, axis=(1, 2, 3))
+    diffs = np.diff(intensity)
+    fft = np.fft.fft(intensity - np.mean(intensity))
+    fft_mag = np.abs(fft)[:len(fft)//2]
+    features = [
+        np.mean(intensity), np.std(intensity),
+        np.max(intensity) - np.min(intensity),
+        np.mean(np.abs(diffs)), np.max(np.abs(diffs)), np.std(diffs),
+        fft_mag[1] if len(fft_mag) > 1 else 0,
+        np.sum(fft_mag[:5]) if len(fft_mag) >= 5 else np.sum(fft_mag),
+        np.argmax(fft_mag[1:]) + 1 if len(fft_mag) > 1 else 0
+    ]
+    for ws in [10, 25]:
+        if len(intensity) >= ws:
+            windows = [intensity[i:i+ws] for i in range(0, len(intensity)-ws+1, max(ws//2, 1))]
+            if windows:
+                features.extend([
+                    np.mean([np.std(w) for w in windows]),
+                    np.mean([np.max(w) - np.min(w) for w in windows])
+                ])
+            else:
+                features.extend([0, 0])
+        else:
+            features.extend([0, 0])
+    return np.array(features)
+
+
+def extract_spatial(video):
+    avg = np.mean(video, axis=0)
+    h, w = avg.shape[:2]
+    features = []
+    for q in [avg[:h//2,:w//2], avg[:h//2,w//2:], avg[h//2:,:w//2], avg[h//2:,w//2:]]:
+        features.extend([np.mean(q), np.std(q)])
+    left = avg[:, :w//2]
+    right = np.flip(avg[:, w//2:], axis=1)
+    min_w = min(left.shape[1], right.shape[1])
+    if min_w > 0:
+        lf, rf = left[:, :min_w].flatten(), right[:, :min_w].flatten()
+        if len(lf) > 1 and np.std(lf) > 0 and np.std(rf) > 0:
+            sym = np.corrcoef(lf, rf)[0, 1]
+        else:
+            sym = 0
+    else:
+        sym = 0
+    features.append(sym if not np.isnan(sym) else 0)
+    var = np.mean(np.var(video, axis=0), axis=2) if len(video.shape) > 3 else np.var(video, axis=0)
+    total = np.sum(var)
+    if total > 0:
+        y_c, x_c = np.meshgrid(range(h), range(w), indexing='ij')
+        features.extend([np.sum(y_c * var) / total / h, np.sum(x_c * var) / total / w])
+    else:
+        features.extend([0.5, 0.5])
+    return np.array(features)
+
+
+def extract_features_single(video):
+    video = ensure_uint8_video(video)
+    return np.concatenate([extract_optical_flow(video), extract_temporal(video), extract_spatial(video)])
+
+
+def apply_common_acquisition_artifacts(video, rng):
+    video_f = ensure_uint8_video(video).astype(np.float32)
+    gain = rng.uniform(0.97, 1.03)
+    bias = rng.uniform(-4.0, 4.0)
+    video_f = video_f * gain + bias
+    if rng.rand() < 0.85:
+        video_f += rng.normal(0, rng.uniform(0.8, 2.2), video_f.shape)
+    if rng.rand() < 0.25:
+        gamma = rng.uniform(0.97, 1.03)
+        video_f = 255.0 * np.power(np.clip(video_f / 255.0, 0, 1), gamma)
+    return np.clip(video_f, 0, 255).astype(np.uint8)
+
+
+def apply_tremor(video, severity, rng):
+    h, w = video.shape[1], video.shape[2]
+    amp = rng.uniform(0.4, 1.6) * max(severity, 0.1)
+    freq = rng.uniform(3.0, 6.0)
+    phase = rng.uniform(0, 2*np.pi)
+    out = np.empty_like(video)
+    for i in range(len(video)):
+        dx = amp * np.sin(2*np.pi*freq*i/len(video) + phase)
+        dy = 0.5 * amp * np.cos(2*np.pi*freq*i/len(video) + phase)
+        M = np.float32([[1, 0, dx], [0, 1, dy]])
+        out[i] = cv2.warpAffine(video[i], M, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
+    return out
+
+
+def apply_asymmetry(video, severity, rng):
+    out = video.astype(np.float32).copy()
+    mean_frame = np.mean(out, axis=0)
+    h, w = out.shape[1], out.shape[2]
+    atten = 1.0 - rng.uniform(0.10, 0.35) * severity
+    left_side = rng.rand() < 0.5
+    cols = slice(0, w//2) if left_side else slice(w//2, w)
+    out[:, :, cols, :] = atten * out[:, :, cols, :] + (1 - atten) * mean_frame[:, cols, :]
+    gradient = np.linspace(1.0, atten, w//2, dtype=np.float32).reshape(1, 1, -1, 1)
+    if left_side:
+        out[:, :, :w//2, :] *= gradient
+    else:
+        out[:, :, w//2:, :] *= gradient[:, :, ::-1, :]
+    return np.clip(out, 0, 255).astype(np.uint8)
+
+
+def apply_motion_blur(video, severity, rng):
+    k = int(3 + 4 * severity)
+    if k % 2 == 0:
+        k += 1
+    kernel = np.zeros((k, k), dtype=np.float32)
+    if rng.rand() < 0.5:
+        kernel[k//2, :] = 1.0
+    else:
+        kernel[:, k//2] = 1.0
+    kernel /= kernel.sum()
+    out = video.copy()
+    step = max(2, int(6 - 3 * severity))
+    for i in range(0, len(video), step):
+        out[i] = cv2.filter2D(out[i], -1, kernel)
+    return out
+
+
+def apply_temporal_jitter(video, severity, rng):
+    out = video.copy()
+    n_changes = max(1, int(len(video) * rng.uniform(0.02, 0.06) * max(severity, 0.2)))
+    valid_idx = np.arange(1, len(video) - 1)
+    chosen = rng.choice(valid_idx, size=min(n_changes, len(valid_idx)), replace=False)
+    for idx in chosen:
+        out[idx] = out[idx - 1] if rng.rand() < 0.5 else out[idx + 1]
+    return out
+
+
+def apply_global_noise(video, severity, rng):
+    sigma = rng.uniform(1.5, 6.0) * max(severity, 0.15)
+    noisy = video.astype(np.float32) + rng.normal(0, sigma, video.shape)
+    return np.clip(noisy, 0, 255).astype(np.uint8)
+
+
+def generate_synthetic_pathological_video(base_video, rng, exclude_set=None):
+    """
+    Genera vídeo patológico sintético con perturbaciones clínicas.
+    
+    Args:
+        base_video: vídeo base normal
+        rng: generador aleatorio
+        exclude_set: set de strings con perturbaciones a excluir
+                    {'artifacts', 'rigidez', 'temblor', 'asimetria', 
+                     'motion_blur', 'jitter', 'ruido'}
+    """
+    if exclude_set is None:
+        exclude_set = set()
+    
+    video = apply_common_acquisition_artifacts(base_video, rng).astype(np.float32) if 'artifacts' not in exclude_set else ensure_uint8_video(base_video).astype(np.float32)
+    mean_frame = np.mean(video, axis=0, keepdims=True)
+    severity = rng.uniform(0.20, 0.65)
+    if rng.rand() < 0.35:
+        severity *= rng.uniform(0.35, 0.65)
+    
+    if 'rigidez' not in exclude_set:
+        amplitude_scale = 1.0 - rng.uniform(0.12, 0.42) * severity
+        video = mean_frame + amplitude_scale * (video - mean_frame)
+    
+    video = np.clip(video, 0, 255).astype(np.uint8)
+    
+    if 'temblor' not in exclude_set and rng.rand() < 0.80:
+        video = apply_tremor(video, severity, rng)
+    if 'asimetria' not in exclude_set and rng.rand() < 0.65:
+        video = apply_asymmetry(video, severity, rng)
+    if 'motion_blur' not in exclude_set and rng.rand() < 0.45:
+        video = apply_motion_blur(video, severity, rng)
+    if 'jitter' not in exclude_set and rng.rand() < 0.35:
+        video = apply_temporal_jitter(video, severity, rng)
+    if 'ruido' not in exclude_set:
+        video = apply_global_noise(video, severity, rng)
+    
+    if rng.rand() < 0.50:
+        original = apply_common_acquisition_artifacts(base_video, rng).astype(np.float32) if 'artifacts' not in exclude_set else ensure_uint8_video(base_video).astype(np.float32)
+        alpha = rng.uniform(0.08, 0.22)
+        video = np.clip((1 - alpha) * video.astype(np.float32) + alpha * original, 0, 255).astype(np.uint8)
+    return video
+
+
+def extract_feature_batch_from_videos(videos, desc, apply_common_noise=True):
     rng = np.random.RandomState(RANDOM_STATE)
-    sigma = X_normal.std(axis=0) + 1e-8
-    X_synth = np.zeros((n_synthetic, X_normal.shape[1]))
-    spl = n_synthetic // severity_levels
-
-    for lv in range(severity_levels):
-        s, e = lv * spl, (lv + 1) * spl if lv < severity_levels - 1 else n_synthetic
-        n = e - s
-        sev = 1.0 + (lv / max(severity_levels - 1, 1)) * 2.0
-        base = X_normal[rng.choice(len(X_normal), n, replace=True)].copy()
-
-        # Flujo óptico (0-5): mov. más bruscos
-        base[:, 0] *= (1 + 0.5*sev + rng.normal(0, 0.2, n))
-        base[:, 1] *= (1 + 0.8*sev + rng.normal(0, 0.3, n))
-        base[:, 2] *= (1 + 0.6*sev + rng.normal(0, 0.25, n))
-        base[:, 3] += rng.normal(0, 0.5*sev*sigma[3], n)
-        base[:, 4] *= (1 + 0.4*sev + rng.normal(0, 0.2, n))
-        base[:, 5] = np.clip(base[:, 5]*(1 + 0.3*sev + rng.normal(0, 0.15, n)), 0, X_normal[:, 5].max()*2)
-
-        # Temporales (6-18): pérdida periodicidad
-        base[:, 6] *= (1 + rng.normal(0.2*sev, 0.3, n))
-        base[:, 7] *= (1 + 0.6*sev + rng.normal(0, 0.25, n))
-        base[:, 8] *= (1 + 0.5*sev + rng.normal(0, 0.2, n))
-        for c in [9, 10, 11]:
-            base[:, c] *= (1 + 0.7*sev + rng.normal(0, 0.3, n))
-        base[:, 12] *= (1 + 0.3*sev + rng.normal(0, 0.2, n))
-        base[:, 13] = np.clip(base[:, 13]*(1 - 0.3*sev/3 + rng.normal(0, 0.15, n)), 0, None)
-        base[:, 14] *= (1 + 0.4*sev + rng.normal(0, 0.2, n))
-        for c in [15, 16, 17, 18]:
-            base[:, c] *= (1 + 0.5*sev + rng.normal(0, 0.2, n))
-
-        # Espaciales (19-29): asimetría bilateral
-        asym = rng.uniform(0.5, 1.5, n)
-        base[:, 19] *= asym
-        base[:, 20] *= (1 + 0.4*sev*rng.uniform(0, 1, n))
-        base[:, 21] *= (2 - asym)
-        base[:, 22] *= (1 + 0.4*sev*rng.uniform(0, 1, n))
-        base[:, 23] *= asym*(1 + rng.normal(0, 0.1, n))
-        base[:, 24] *= (1 + 0.3*sev*rng.uniform(0, 1, n))
-        base[:, 25] *= (2 - asym)*(1 + rng.normal(0, 0.1, n))
-        base[:, 26] *= (1 + 0.3*sev*rng.uniform(0, 1, n))
-        base[:, 27] = np.clip(base[:, 27]*(1 - 0.3*sev/3 + rng.normal(0, 0.1, n)), 0, None)
-        base[:, 28] += rng.normal(0.2*sev*sigma[28], 0.5*sigma[28], n)
-        base[:, 29] += rng.normal(0.3*sev*sigma[29], 0.5*sigma[29], n)
-
-        X_synth[s:e] = base
-
-    for c in [0,1,2,5,7,8,10,11,13,15,16,17,18,20,22,24,26]:
-        X_synth[:, c] = np.abs(X_synth[:, c])
-    return X_synth
+    X = np.zeros((len(videos), 30), dtype=np.float32)
+    for i, video in enumerate(videos):
+        try:
+            current = apply_common_acquisition_artifacts(video, rng) if apply_common_noise else ensure_uint8_video(video)
+            X[i] = extract_features_single(current)
+        except Exception:
+            X[i] = np.zeros(30, dtype=np.float32)
+        if (i + 1) % 100 == 0 or i == len(videos) - 1:
+            print(f"  {desc}: {i+1}/{len(videos)}")
+            gc.collect()
+    return np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
 
 
-def load_and_generate_dataset():
-    pr("FASE 1: CARGA DE DATOS Y GENERACIÓN SINTÉTICA")
-    features_path = DATA_DIR / 'features.npz'
-    if not features_path.exists():
-        print("ERROR: features.npz no encontrado"); sys.exit(1)
-    data = np.load(features_path)
-    X_norm = data['X']; y_orig = data['y']
-    print(f"  Normales: {X_norm.shape[0]}, Features: {X_norm.shape[1]}")
+def generate_synthetic_pathological_from_videos(videos, n_synthetic=None, exclude_set=None):
+    if n_synthetic is None:
+        n_synthetic = len(videos)
+    rng = np.random.RandomState(RANDOM_STATE)
+    X_patho = np.zeros((n_synthetic, 30), dtype=np.float32)
+    desc_suffix = f" [excluye: {', '.join(sorted(exclude_set))}]" if exclude_set else ""
+    for i in range(n_synthetic):
+        try:
+            base_video = videos[rng.randint(0, len(videos))]
+            synth_video = generate_synthetic_pathological_video(base_video, rng, exclude_set=exclude_set)
+            X_patho[i] = extract_features_single(synth_video)
+        except Exception:
+            X_patho[i] = np.zeros(30, dtype=np.float32)
+        if (i + 1) % 100 == 0 or i == n_synthetic - 1:
+            print(f"  Patológicas sintéticas (vídeo crudo){desc_suffix}: {i+1}/{n_synthetic}")
+            gc.collect()
+    return np.nan_to_num(X_patho, nan=0.0, posinf=0.0, neginf=0.0)
 
-    ps("Generación de muestras patológicas sintéticas")
-    X_patho = generate_synthetic_pathological(X_norm, n_synthetic=len(X_norm), severity_levels=3)
-    print(f"  Sintéticas generadas: {X_patho.shape[0]} (3 niveles severidad)")
+
+def load_and_generate_dataset(exclude_set=None):
+    pr("FASE 1: CARGA DE DATOS Y GENERACIÓN SINTÉTICA [raw_video]")
+    videos, raw_labels = load_raw_video_corpus()
+    ps("Extracción de features de los vídeos normales con ruido de adquisición compartido")
+    X_norm = extract_feature_batch_from_videos(videos, 'Normales')
+    ps("Generación de patología sintética a partir de vídeo crudo")
+    X_patho = generate_synthetic_pathological_from_videos(videos, n_synthetic=len(videos), exclude_set=exclude_set)
+    dataset_note = 'Perturbación sobre vídeo crudo antes de extracción de features'
+    if exclude_set:
+        dataset_note += f' [excluye: {", ".join(sorted(exclude_set))}]'
+    save_name = DATA_DIR / f'features_synthetic_raw_video_{TIMESTAMP}.npz'
+    y_orig = raw_labels
 
     X = np.vstack([X_norm, X_patho])
     y = np.concatenate([np.zeros(len(X_norm), dtype=int), np.ones(len(X_patho), dtype=int)])
@@ -157,12 +388,12 @@ def load_and_generate_dataset():
     print(f"  Dataset combinado: {X.shape[0]} muestras")
     print(f"  Normal: {np.sum(y==0)}, Patológico: {np.sum(y==1)}")
 
-    sig = sum(1 for i in range(30) if stats.ttest_ind(X[y==0,i], X[y==1,i]).pvalue < 0.001)
+    sig = sum(1 for i in range(30) if stats.ttest_ind(X[y==0, i], X[y==1, i]).pvalue < 0.001)
     print(f"  Features con p<0.001: {sig}/30")
 
-    np.savez(DATA_DIR / 'features_synthetic_07022026.npz', X=X, y=y,
-             X_normal=X_norm, X_pathological=X_patho)
-    return X, y, X_norm, X_patho
+    np.savez(save_name, X=X, y=y, X_normal=X_norm, X_pathological=X_patho, source_mode='raw_video')
+    print(f"  Dataset guardado: {save_name.name}")
+    return X, y, X_norm, X_patho, dataset_note
 
 
 # ============================================================================
@@ -575,16 +806,16 @@ def shap_analysis(models, splits, pca):
 # FASE 8: EXPORTAR
 # ============================================================================
 
-def export_results(results_df, det, cv_df, pca, splits, train_times, total_time):
+def export_results(results_df, det, cv_df, pca, splits, train_times, total_time, mode_tag, dataset_note):
     pr("FASE 8: EXPORTACIÓN")
     best = results_df.iloc[0]
     summary = {
-        'timestamp': TIMESTAMP, 'experiment': 'Synthetic pathological', 'date': '07/02/2026',
+        'timestamp': TIMESTAMP, 'experiment': mode_tag, 'date': datetime.now().strftime('%d/%m/%Y'),
         'dataset': {
             'total': len(splits['y_train'])+len(splits['y_val'])+len(splits['y_test']),
             'n_features_raw': 30, 'n_features_pca': int(pca.n_components_),
             'pca_variance': float(sum(pca.explained_variance_ratio_)),
-            'synthetic_method': '3-level clinical perturbation'
+            'synthetic_method': dataset_note
         },
         'splits': {k: len(splits[f'y_{k}']) for k in ['train','val','test']},
         'best_model': {k: float(best[k]) if isinstance(best[k],float) else best[k]
@@ -606,49 +837,248 @@ def export_results(results_df, det, cv_df, pca, splits, train_times, total_time)
     return summary
 
 
-# ============================================================================
-# MAIN
-# ============================================================================
-
-def main():
-    t0 = time.time()
-    print("\n" + "█"*78)
-    print("█  PIPELINE SINTÉTICO - ML DETECCIÓN ESPASTICIDAD INFANTIL              █")
-    print("█"*78)
-    print(f"  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-
-    X, y, Xn, Xp = load_and_generate_dataset()
+def run_experiment(exclude_set=None):
+    experiment_start = time.time()
+    configure_output_dirs()
+    X, y, Xn, Xp, dataset_note = load_and_generate_dataset(exclude_set=exclude_set)
     splits, scaler, pca = preprocess(X, y)
     models, times = train_models(splits)
     results_df, det = evaluate_models(models, splits, times)
     X_sc = scaler.transform(X)
     cv_res, cv_df = cross_validation_analysis(X_sc, y, pca)
     generate_visualizations(models, splits, results_df, det, pca, scaler, cv_res, X, y, Xn, Xp)
-    shap_res = shap_analysis(models, splits, pca)
-    total = time.time() - t0
-    summary = export_results(results_df, det, cv_df, pca, splits, times, total)
+    shap_analysis(models, splits, pca)
+    total = time.time() - experiment_start
+    summary = export_results(results_df, det, cv_df, pca, splits, times, total, 'raw_video', dataset_note)
+    return {
+        'results_df': results_df,
+        'det': det,
+        'cv_df': cv_df,
+        'summary': summary,
+        'dataset_note': dataset_note
+    }
 
-    pr("RESUMEN EJECUTIVO")
-    b = results_df.iloc[0]
-    print(f"""
-  DATASET: Sintético (767 normales + 767 patológicos)
-    Features: 30 → PCA: {pca.n_components_} | Varianza: {sum(pca.explained_variance_ratio_)*100:.1f}%
 
-  DIVISIÓN: Train={len(splits['y_train'])} | Val={len(splits['y_val'])} | Test={len(splits['y_test'])}
+# ============================================================================
+# EXPERIMENTO B: ABLACIÓN SISTEMÁTICA
+# ============================================================================
 
-  MEJOR MODELO: {b['Model']}
-    Accuracy:      {b['Accuracy']:.4f}
-    Sensibilidad:  {b['Sensitivity']:.4f}
-    Especificidad: {b['Specificity']:.4f}
-    F1-score:      {b['F1-score']:.4f}
-    AUC-ROC:       {b['AUC-ROC']:.4f}
-    MCC:           {b['MCC']:.4f}
+def run_ablation_experiment():
+    """
+    Ejecuta el estudio de ablación sistemática (Experimento B).
+    Genera 8 datasets con diferentes perturbaciones excluidas,
+    entrena modelos y compara resultados.
+    """
+    t0 = time.time()
+    pr("EXPERIMENTO B: ESTUDIO DE ABLACIÓN SISTEMÁTICA")
+    
+    # Definir las 8 condiciones de ablación
+    ablation_conditions = [
+        ('A_completo', None, 'Completo (todas las perturbaciones)'),
+        ('B_sin_rigidez', {'rigidez'}, 'Sin rigidez (amplitude_scale)'),
+        ('C_sin_temblor', {'temblor'}, 'Sin temblor'),
+        ('D_sin_asimetria', {'asimetria'}, 'Sin asimetría'),
+        ('E_sin_motion_blur', {'motion_blur'}, 'Sin motion blur'),
+        ('F_sin_jitter', {'jitter'}, 'Sin fluctuación temporal'),
+        ('G_sin_ruido', {'ruido'}, 'Sin ruido gaussiano'),
+        ('H_sin_artifacts', {'artifacts'}, 'Sin artifacts de adquisición')
+    ]
+    
+    # Crear directorio para resultados de ablación
+    ablation_dir = REPORTS_DIR / f'ablation_{TIMESTAMP}'
+    ablation_dir.mkdir(parents=True, exist_ok=True)
+    
+    results_summary = []
+    all_results = {}
+    
+    for condition_id, exclude_set, description in ablation_conditions:
+        ps(f"Condición {condition_id}: {description}")
+        condition_start = time.time()
+        
+        # Configurar directorios específicos para esta condición
+        global MODELS_DIR, FIGURES_DIR, RESULTS_DIR
+        MODELS_DIR = ablation_dir / condition_id / 'models'
+        FIGURES_DIR = ablation_dir / condition_id / 'figures'
+        RESULTS_DIR = ablation_dir / condition_id / 'results'
+        for d in [MODELS_DIR, FIGURES_DIR, RESULTS_DIR]:
+            d.mkdir(parents=True, exist_ok=True)
+        
+        # Ejecutar experimento para esta condición (solo modo raw_video)
+        try:
+            X, y, Xn, Xp, dataset_note = load_and_generate_dataset(exclude_set=exclude_set)
+            splits, scaler, pca = preprocess(X, y)
+            models, times = train_models(splits)
+            results_df, det = evaluate_models(models, splits, times)
+            
+            # Guardar resultados de esta condición
+            for _, row in results_df.iterrows():
+                results_summary.append({
+                    'Condicion': condition_id,
+                    'Descripcion': description,
+                    'Modelo': row['Model'],
+                    'Accuracy': row['Accuracy'],
+                    'AUC-ROC': row['AUC-ROC'],
+                    'F1-Score': row['F1-score'],
+                    'Tiempo_s': times.get(row['Model'], 0)
+                })
+            
+            all_results[condition_id] = {
+                'results_df': results_df,
+                'description': description,
+                'exclude_set': exclude_set,
+                'elapsed_s': time.time() - condition_start
+            }
+            
+            print(f"  ✅ Condición {condition_id} completada en {time.time() - condition_start:.1f}s")
+        except Exception as e:
+            print(f"  ❌ Error en condición {condition_id}: {e}")
+            continue
+    
+    # Crear tabla resumen
+    pr("GENERANDO ANÁLISIS COMPARATIVO")
+    summary_df = pd.DataFrame(results_summary)
+    summary_df.to_csv(ablation_dir / 'summary_table.csv', index=False)
+    
+    # Calcular impacto de cada perturbación (usando SVM como referencia)
+    baseline_acc = summary_df[(summary_df['Condicion'] == 'A_completo') & (summary_df['Modelo'] == 'SVM')]['Accuracy'].values[0]
+    
+    impact_analysis = []
+    for condition_id, exclude_set, description in ablation_conditions[1:]:  # Skip completo
+        cond_acc = summary_df[(summary_df['Condicion'] == condition_id) & (summary_df['Modelo'] == 'SVM')]['Accuracy'].values
+        if len(cond_acc) > 0:
+            delta = (cond_acc[0] - baseline_acc) * 100
+            impact_rel = (delta / baseline_acc) * 100 if baseline_acc > 0 else 0
+            perturbation = list(exclude_set)[0] if exclude_set else 'ninguna'
+            impact_analysis.append({
+                'Perturbacion_excluida': perturbation,
+                'Condicion': condition_id,
+                'Accuracy_SVM': cond_acc[0],
+                'Delta_pp': delta,
+                'Impacto_relativo_%': impact_rel
+            })
+    
+    impact_df = pd.DataFrame(impact_analysis)
+    impact_df = impact_df.sort_values('Delta_pp', ascending=True)
+    impact_df.to_csv(ablation_dir / 'impact_analysis.csv', index=False)
+    
+    # Generar visualización comparativa
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+    
+    # Gráfico 1: Accuracy por condición (todos los modelos)
+    pivot = summary_df.pivot(index='Condicion', columns='Modelo', values='Accuracy')
+    pivot.plot(kind='bar', ax=ax1, width=0.8)
+    ax1.set_title('Accuracy por condición y modelo', fontsize=14, fontweight='bold')
+    ax1.set_ylabel('Accuracy')
+    ax1.set_xlabel('Condición')
+    ax1.legend(title='Modelo', bbox_to_anchor=(1.05, 1), loc='upper left')
+    ax1.grid(axis='y', alpha=0.3)
+    ax1.set_ylim(0.5, 1.0)
+    plt.setp(ax1.xaxis.get_majorticklabels(), rotation=45, ha='right')
+    
+    # Gráfico 2: Impacto relativo de cada perturbación
+    colors = ['#D32F2F' if x < -10 else '#FF9800' if x < -5 else '#4CAF50' for x in impact_df['Delta_pp']]
+    ax2.barh(impact_df['Perturbacion_excluida'], impact_df['Delta_pp'], color=colors)
+    ax2.set_xlabel('Δ Accuracy (pp)', fontsize=12)
+    ax2.set_title('Impacto de excluir cada perturbación (SVM)', fontsize=14, fontweight='bold')
+    ax2.axvline(x=0, color='black', linestyle='--', linewidth=1, alpha=0.5)
+    ax2.grid(axis='x', alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig(ablation_dir / 'ablation_analysis.png', dpi=150, bbox_inches='tight')
+    plt.close()
+    
+    # Generar tabla LaTeX
+    latex_lines = [
+        '\\begin{table}[H]',
+        '\\centering',
+        '\\caption{Resultados del estudio de ablación sistemática (SVM).}',
+        '\\label{tab:ablation_results}',
+        '\\begin{tabular}{lcccc}',
+        '\\toprule',
+        '\\textbf{Condición} & \\textbf{Perturbación excluida} & \\textbf{Accuracy} & \\textbf{$\\Delta$ (pp)} & \\textbf{Impacto rel.} \\\\',
+        '\\midrule',
+        f'Completo & Ninguna & {baseline_acc:.4f} & - & 100\\% \\\\'
+    ]
+    
+    for _, row in impact_df.iterrows():
+        latex_lines.append(
+            f"{row['Condicion'].replace('_', ' ')} & {row['Perturbacion_excluida'].capitalize()} & "
+            f"{row['Accuracy_SVM']:.4f} & {row['Delta_pp']:.2f} & "
+            f"{100 + row['Impacto_relativo_%']:.1f}\\% \\\\"
+        )
+    
+    latex_lines.extend([
+        '\\bottomrule',
+        '\\end{tabular}',
+        '\\end{table}'
+    ])
+    
+    (ablation_dir / 'tabla_latex.tex').write_text('\n'.join(latex_lines), encoding='utf-8')
+    
+    # Guardar análisis completo en JSON
+    analysis_json = {
+        'timestamp': TIMESTAMP,
+        'baseline_accuracy': float(baseline_acc),
+        'total_time_s': time.time() - t0,
+        'conditions': {cid: {'description': desc, 'exclude': list(exc) if exc else []} 
+                      for cid, exc, desc in ablation_conditions},
+        'impact_ranking': impact_df.to_dict('records')
+    }
+    
+    with open(ablation_dir / 'ablation_analysis.json', 'w', encoding='utf-8') as f:
+        json.dump(analysis_json, f, indent=2, ensure_ascii=False)
+    
+    # Resumen final
+    pr("RESUMEN DEL EXPERIMENTO DE ABLACIÓN")
+    print(f"\n  Baseline (completo): Accuracy = {baseline_acc:.4f}")
+    print(f"\n  Ranking de impacto (de mayor a menor):")
+    for i, row in impact_df.iterrows():
+        print(f"    {i+1}. {row['Perturbacion_excluida']:15s}: Δ = {row['Delta_pp']:6.2f} pp")
+    
+    print(f"\n  Tiempo total: {time.time() - t0:.1f}s ({(time.time() - t0)/60:.1f} min)")
+    print(f"  Resultados guardados en: {ablation_dir}/")
+    print(f"\n  ✅ EXPERIMENTO B COMPLETADO")
+    
+    return ablation_dir, summary_df, impact_df
 
-  VALIDACIÓN CRUZADA:
-{cv_df[['Model','CV-Acc-Mean','CV-Acc-Std','CV-AUC-Mean','Overfit-Gap']].to_string(index=False)}
 
-  TIEMPO: {total:.1f}s ({total/60:.1f}min)
-  FIGURAS: {len(list(FIGURES_DIR.glob('*.png')))}
+# ============================================================================
+# MAIN
+# ============================================================================
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description='Pipeline ML Detección Espasticidad Infantil - Modo B')
+    parser.add_argument('--experiment', type=str, choices=['video', 'ablation'], default='video',
+                       help='Tipo de experimento: video (Modo B) o ablation (Experimento B)')
+    args = parser.parse_args()
+    
+    t0 = time.time()
+    print("\n" + "█"*78)
+    print("█  PIPELINE MODO B - ML DETECCIÓN ESPASTICIDAD INFANTIL                █")
+    print("█"*78)
+    print(f"  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    if args.experiment == 'ablation':
+        ablation_dir, summary_df, impact_df = run_ablation_experiment()
+        total = time.time() - t0
+        print(f"\n  ✅ EXPERIMENTO B COMPLETADO - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"  TIEMPO TOTAL: {total:.1f}s ({total/60:.1f}min)")
+    else:
+        pr('MODO B: PERTURBACIÓN SOBRE VÍDEO CRUDO')
+        experiment = run_experiment()
+        total = time.time() - t0
+        best = experiment['results_df'].iloc[0]
+        print(f"""
+  MODO B (raw_video):
+    Mejor modelo: {best['Model']}
+    Accuracy:      {best['Accuracy']:.4f}
+    Sensibilidad:  {best['Sensitivity']:.4f}
+    Especificidad: {best['Specificity']:.4f}
+    AUC-ROC:       {best['AUC-ROC']:.4f}
+
+  TIEMPO TOTAL: {total:.1f}s ({total/60:.1f}min)
+  RESULTADOS GUARDADOS EN: {RESULTS_DIR}
   ✅ COMPLETADO - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 """)
 

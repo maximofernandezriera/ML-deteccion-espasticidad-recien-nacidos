@@ -24,8 +24,8 @@ El experimento evalúa 8 condiciones diferentes:
 ### Ejecutar el experimento completo
 
 ```bash
-cd /home/maximo/Dropbox/UOC/TMF_bruto/ML-deteccion-espasticidad-recien-nacidos
-python3 main_pipeline_29032026_1516.py --experiment=ablation
+cd ML-deteccion-espasticidad-recien-nacidos
+python3 main_pipeline.py --experiment ablation
 ```
 
 ### Ejecutar tests de verificación
@@ -37,9 +37,9 @@ python3 test_ablation.py
 ### Ejecutar el pipeline dual normal (sin ablación)
 
 ```bash
-python3 main_pipeline_29032026_1516.py --experiment=dual
+python3 main_pipeline.py --experiment video
 # o simplemente:
-python3 main_pipeline_29032026_1516.py
+python3 main_pipeline.py
 ```
 
 ## Outputs Generados
@@ -149,9 +149,9 @@ Completo & Ninguna & 0.8274 & - & 100\% \\
 ### Error: "No se encontró el corpus de vídeo crudo"
 
 Verifica que existe el archivo en una de estas rutas:
-- `/home/maximo/Dropbox/UOC/TMF_bruto/ML-deteccion-espasticidad-recien-nacidos/data/raw/data_100_50_50.npz`
-- `/home/maximo/Dropbox/UOC/TMF_bruto/data/raw/data_100_50_50.npz`
-- `/home/maximo/Dropbox/UOC/TMF_bruto/FUENTE/kaggle_data/data_100_50_50.npz`
+- `data/raw/data_100_50_50.npz`
+- `data/raw/data_100_50_50.npz`
+- `data/raw/data_100_50_50.npz`
 
 ### Error de memoria
 

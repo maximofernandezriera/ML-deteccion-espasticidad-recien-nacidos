@@ -12,7 +12,7 @@ PROJECT_ROOT = Path(__file__).parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 # Importar funciones necesarias
-from main_pipeline_29032026_1516 import (
+from main_pipeline import (
     generate_synthetic_pathological_video,
     ensure_uint8_video,
     extract_features_single,
@@ -93,7 +93,7 @@ def main():
     if success:
         print("✅ TODOS LOS TESTS PASARON")
         print("\nPuedes ejecutar el experimento completo con:")
-        print("  python main_pipeline_29032026_1516.py --experiment=ablation")
+        print("  python main_pipeline.py --experiment ablation")
     else:
         print("❌ ALGUNOS TESTS FALLARON")
         print("Revisa los errores antes de ejecutar el experimento completo")

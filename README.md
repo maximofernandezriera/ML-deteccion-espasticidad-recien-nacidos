@@ -32,34 +32,40 @@ Este proyecto aborda la detección temprana de espasticidad mediante el análisi
 
 ## Resultados principales
 
+Resultados sobre el conjunto de test independiente (n=307), con las perturbaciones aplicadas **sobre vídeo crudo** (las que se defienden en la memoria):
+
 | Modelo | Accuracy | Sensibilidad | Especificidad | AUC-ROC |
 |--------|----------|--------------|---------------|---------|
-| **SVM** | **99.35%** | 98.69% | **100%** | **0.9997** |
-| Logistic Regression | 99.02% | 99.35% | 98.70% | 0.9994 |
-| Random Forest | 99.02% | 99.35% | 98.70% | 0.9981 |
-| XGBoost | 99.02% | 98.69% | 99.35% | 0.9985 |
+| **SVM** | **82.74%** | 77.12% | **88.31%** | **0.9117** |
+| XGBoost | 82.08% | **80.39%** | 83.77% | 0.9011 |
+| Random Forest | 80.46% | 78.43% | 82.47% | 0.8900 |
+| Logistic Regression | 78.83% | 75.82% | 81.82% | 0.8489 |
+
+El SVM lidera en accuracy, especificidad, AUC-ROC, MCC (0.659) y Brier Score (0.1184); XGBoost destaca en sensibilidad y F1. Estos valores, más conservadores que los de perturbar directamente las características ya extraídas, reflejan un escenario más realista porque las perturbaciones sobre vídeo crudo preservan las correlaciones naturales entre familias de características.
+
+> **Nota sobre la calibración:** el SVM utiliza Platt scaling y alcanza un Brier Score de 0.1184 (Brier Skill Score 0.526, ECE 0.0568), lo que indica probabilidades razonablemente calibradas.
 
 ## Estructura del repositorio
 
 ```
 ML-deteccion-espasticidad-recien-nacidos/
-├── main_pipeline.py                # Pipeline principal (entrenamiento + evaluación)
-├── test_ablation.py                # Test de ablación sistemática (7 perturbaciones)
+├── main_pipeline.py                # Pipeline principal sobre vídeo crudo (entrenamiento + evaluación + ablación)
+├── test_ablation.py                # Test de verificación del experimento de ablación
 ├── requirements.txt                # Dependencias Python
 ├── README.md                       # Este archivo
-├── README_EXPERIMENTO_B.md         # Documentación del experimento sobre vídeo crudo
+├── README_EXPERIMENTO_B.md         # Documentación del experimento de ablación sistemática
 ├── docs/
 │   └── pca_loadings.md             # Tabla completa de ponderaciones PCA → features originales
-├── data/                           # (ignorado por git, ver instrucciones de descarga)
+├── data/                           # (parcialmente ignorado por git, ver instrucciones)
 │   └── raw/
-│       ├── data_100_50_50.npz      # Vídeos (1534 × 100 × 50 × 50)
-│       └── target_100_50_50.npz    # Etiquetas binarias
+│       ├── data_100_50_50.npz      # Vídeos normales (767 × 100 × 50 × 50)
+│       └── target_100_50_50.npz    # Etiquetas originales
 ├── reports/                        # (ignorado por git, generado al ejecutar)
 │   ├── figures_video/              # 16 figuras PNG del experimento principal
 │   ├── results_video/              # CSVs y JSON con métricas
 │   └── ablation_<timestamp>/       # Resultados de ablación
 └── models/                         # (ignorado por git)
-    └── video_<timestamp>/          # Modelos serializados (.pkl)
+    └── synthetic_video/            # Modelos serializados (.pkl)
 ```
 
 ## Requisitos y configuración
@@ -68,7 +74,7 @@ ML-deteccion-espasticidad-recien-nacidos/
 - **CPU**: ≥4 núcleos recomendado
 - **RAM**: ≥8 GB
 - **GPU**: no requerida
-- **Tiempo total esperado**: ~2 min (experimento principal) + ~17 min (ablación)
+- **Tiempo total esperado**: ~2-3 min (experimento principal) + ~17 min (ablación)
 
 Dependencias principales: `numpy`, `pandas`, `scikit-learn`, `xgboost`, `shap`, `matplotlib`, `opencv-python`. Versiones exactas en `requirements.txt`.
 
@@ -83,11 +89,11 @@ cd ML-deteccion-espasticidad-recien-nacidos
 python3 -m venv venv
 source venv/bin/activate     # En Windows: venv\Scripts\activate
 pip install -r requirements.txt
-pip install opencv-python
 
-# 3. Descargar el dataset original (ver sección Dataset más abajo) y colocarlo en data/raw/
+# 3. Descargar el dataset original (ver sección Dataset) y colocarlo en data/raw/
+#    data/raw/data_100_50_50.npz  y  data/raw/target_100_50_50.npz
 
-# 4. Ejecutar el experimento principal
+# 4. Ejecutar el experimento principal (perturbación sobre vídeo crudo)
 python3 main_pipeline.py --experiment video
 
 # 5. Ejecutar el experimento de ablación sistemática
@@ -101,7 +107,7 @@ Los resultados se generan automáticamente en:
 | `reports/figures_video/` | 16 figuras PNG del experimento principal |
 | `reports/results_video/` | CSVs y JSON con todas las métricas |
 | `reports/ablation_<timestamp>/` | Resultados detallados de la ablación |
-| `models/video_<timestamp>/` | Modelos serializados (`.pkl`) por modelo |
+| `models/synthetic_video/` | Modelos serializados (`.pkl`) por modelo |
 
 ## Configuración centralizada del experimento
 
@@ -120,7 +126,7 @@ Todos los hiperparámetros del experimento se centralizan al inicio de `main_pip
 |--------|-----------------|
 | Logistic Regression | solver `saga`, `max_iter=2000`, regularización L2 |
 | Random Forest | `n_estimators=200`, `max_depth=15` |
-| SVM | kernel RBF, `C=1.0`, `gamma='scale'` |
+| SVM | kernel RBF, `C=1.0`, `gamma='scale'`, `probability=True` (Platt scaling) |
 | XGBoost | `n_estimators=200`, `learning_rate=0.1`, `max_depth=6` |
 
 ## Mapa de figuras generadas
@@ -129,45 +135,45 @@ El pipeline produce 16 figuras PNG numeradas en `reports/figures_video/`:
 
 | Nº | Archivo | Contenido |
 |----|---------|-----------|
-| 01 | `fig01_dataset_distribution.png` | Distribución de clases (normal/alterado) |
-| 02 | `fig02_features_correlation.png` | Matriz de correlación 30×30 |
-| 03 | `fig03_features_distribution.png` | Histogramas por familia de features |
-| 04 | `fig04_class_separability.png` | Separabilidad univariante por feature |
-| 05 | `fig05_pca_variance.png` | Varianza explicada acumulada PCA |
-| 06 | `fig06_pca_analysis.png` | Análisis PCA y proyección 2D |
-| 07 | `fig07_models_comparison.png` | Comparativa global de modelos |
-| 08 | `fig08_confusion_matrices.png` | Matrices de confusión |
-| 09 | `fig09_roc_curves.png` | Curvas ROC con AUC |
-| 10 | `fig10_pr_curves.png` | Curvas Precision-Recall |
+| 01 | `fig01_feature_distributions.png` | Distribuciones de características: normal vs alterado |
+| 02 | `fig02_model_comparison.png` | Comparativa de métricas por modelo |
+| 03 | `fig03_confusion_matrices.png` | Matrices de confusión de los 4 modelos |
+| 04 | `fig04_roc_curves.png` | Curvas ROC con AUC |
+| 05 | `fig05_precision_recall.png` | Curvas Precision-Recall |
+| 06 | `fig06_pca_analysis.png` | Varianza explicada PCA y proyección 2D |
+| 07 | `fig07_learning_curves.png` | Curvas de aprendizaje |
+| 08 | `fig08_cv_boxplots.png` | Boxplots de validación cruzada 5-fold |
+| 09 | `fig09_confidence.png` | Distribución de confianza de las predicciones |
+| 10 | `fig10_calibration.png` | Curvas de calibración (con Brier) |
 | 11 | `fig11_heatmap.png` | Heatmap comparativo de todas las métricas |
-| 12 | `fig12_cv_results.png` | Resultados validación cruzada 5-fold |
-| 13 | `fig13_clinical.png` | Métricas clínicas resumidas |
-| 14 | `fig14_learning_curves.png` | Curvas de aprendizaje |
-| 15 | `fig15_shap_importance.png` | Importancia SHAP por componente |
-| 16 | `fig16_shap_beeswarm.png` | Diagrama SHAP beeswarm para RF |
+| 12 | `fig12_threshold.png` | Análisis de umbral (cribado vs confirmación) |
+| 13 | `fig13_clinical.png` | Métricas clínicas (Sensibilidad, Especificidad, VPP, VPN) |
+| 14 | `fig14_times.png` | Tiempos de entrenamiento por modelo |
+| 15 | `fig15_shap_importance.png` | Importancia SHAP por componente (RF y XGBoost) |
+| 16 | `fig16_shap_beeswarm.png` | Diagrama SHAP beeswarm |
 
 ## Documentación complementaria
 
 - [`docs/pca_loadings.md`](docs/pca_loadings.md) — **Tabla completa** de ponderaciones de las 30 características originales sobre los 12 componentes principales, agrupada por importancia SHAP.
-- [`README_EXPERIMENTO_B.md`](README_EXPERIMENTO_B.md) — Descripción del experimento de aumentación sobre vídeo crudo (perturbaciones aplicadas y justificación clínica).
+- [`README_EXPERIMENTO_B.md`](README_EXPERIMENTO_B.md) — Descripción del experimento de ablación sistemática (perturbaciones aplicadas, condiciones y justificación clínica).
 
 ## Dataset
 
 El corpus original contiene **767 vídeos de movimiento espontáneo normal** procedentes del [Infant Movements Dataset (Kaggle)](https://www.kaggle.com/datasets/hansamaldharmananda/infants-movements-kicking-patterns-data-set) (resolución 50×50, 100 frames por muestra).
 
-Se generan **767 muestras sintéticas patológicas** mediante 7 perturbaciones clínicamente motivadas aplicadas sobre el vídeo crudo:
+Se generan **767 muestras sintéticas patológicas** mediante 7 perturbaciones clínicamente motivadas aplicadas **sobre el vídeo crudo** (antes de extraer las características, para preservar las correlaciones naturales):
 
-1. Rigidez (reducción de amplitud y variabilidad)
-2. Temblor de alta frecuencia
-3. Asimetría bilateral
-4. Reducción de complejidad temporal
-5. Pausas prolongadas
-6. Movimientos estereotipados
-7. Combinaciones aleatorias
+1. Rigidez muscular (reducción de amplitud y variabilidad)
+2. Temblor patológico (oscilaciones de alta frecuencia, 3–6 Hz)
+3. Asimetría motora (lesión neurológica unilateral)
+4. Motion blur (desenfoque direccional)
+5. Fluctuación temporal / jitter (pérdida de fluidez)
+6. Ruido muscular (gaussiano)
+7. Defectos de captura / artefactos de adquisición
 
 Total: **1534 muestras balanceadas** (767 normal + 767 sintético).
 
-> **Nota**: los archivos `data_100_50_50.npz` y `target_100_50_50.npz` no se incluyen en el repo por tamaño. Contactar con el autor o descargar del dataset público referenciado en la memoria del TFM.
+> **Nota**: los archivos `data_100_50_50.npz` y `target_100_50_50.npz` no se incluyen en el repo por tamaño. Descárgalos del dataset público referenciado y colócalos en `data/raw/`.
 
 ## Autor y licencia
 
